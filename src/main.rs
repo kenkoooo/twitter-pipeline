@@ -1,13 +1,10 @@
 use actix_web::{App, HttpServer};
 use anyhow::Result;
-use rand::prelude::StdRng;
-use rand::SeedableRng;
 use sqlx::PgPool;
 use std::io::stdin;
-use twitter_pipeline::server::{get_remove_candidates, post_allow_user, post_confirm_remove};
+use twitter_pipeline::server::{get_remove_candidates, remove_user};
 use twitter_pipeline::twitter::TwitterClient;
-use twitter_pipeline::worker::message_listener::MessageListener;
-use twitter_pipeline::worker::relation_sync::RelationSynchronizer;
+use twitter_pipeline::worker::follow_back_worker::FollowBackWorker;
 use twitter_pipeline::worker::user_id_sync::UserIdSynchronizer;
 
 #[actix_web::main]
@@ -40,26 +37,19 @@ async fn main() -> Result<()> {
         client: client.clone(),
         follower: false,
     };
-    let relation_syncer = RelationSynchronizer {
-        pool: pool.clone(),
-        client: client.clone(),
-        rng: StdRng::seed_from_u64(717),
-    };
-    let message_listener = MessageListener {
+    let follow_back_worker = FollowBackWorker {
         pool: pool.clone(),
         client: client.clone(),
     };
 
     followers_ids_syncer.run();
     friends_ids_syncer.run();
-    relation_syncer.run();
-    message_listener.run();
+    follow_back_worker.start();
 
     HttpServer::new(move || {
         App::new()
             .service(get_remove_candidates)
-            .service(post_confirm_remove)
-            .service(post_allow_user)
+            .service(remove_user)
             .data(client.clone())
             .data(pool.clone())
     })

@@ -6,8 +6,6 @@ use sqlx::types::Json;
 use sqlx::{PgPool, Row};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub mod queue;
-
 const FRIENDS_IDS: &str = "friends_ids";
 const FOLLOWERS_IDS: &str = "followers_ids";
 
@@ -20,9 +18,6 @@ pub enum PutIdsRequest {
 pub trait PgPoolExt {
     async fn put_user_ids(&self, request: &PutIdsRequest) -> Result<()>;
     async fn get_user_ids(&self, confirmed_after: i64, is_friends: bool) -> Result<Vec<i64>>;
-
-    async fn is_in_white_list(&self, id: i64) -> Result<bool>;
-    async fn put_white_list(&self, id: i64) -> Result<()>;
 
     async fn get_user_info(&self, id: i64) -> Result<Option<TwitterUser>>;
     async fn put_user_info(&self, user: &TwitterUser) -> Result<()>;
@@ -82,28 +77,6 @@ impl PgPoolExt for PgPool {
             .fetch_all(self)
             .await?;
         Ok(ids)
-    }
-
-    async fn is_in_white_list(&self, id: i64) -> Result<bool> {
-        let result = sqlx::query(
-            r"
-            SELECT COUNT(*) FROM whitelist WHERE id=$1",
-        )
-        .bind(id)
-        .try_map(|row: PgRow| row.try_get::<i64, _>(0))
-        .fetch_one(self)
-        .await?;
-        Ok(result != 0)
-    }
-    async fn put_white_list(&self, id: i64) -> Result<()> {
-        sqlx::query(
-            r"
-            INSERT INTO whitelist (id) VALUES ($1) ON CONFLICT DO NOTHING",
-        )
-        .bind(id)
-        .execute(self)
-        .await?;
-        Ok(())
     }
 
     async fn get_user_info(&self, id: i64) -> Result<Option<TwitterUser>> {
