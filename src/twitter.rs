@@ -1,6 +1,8 @@
 use anyhow::Result;
 use egg_mode::error::Error::RateLimit;
-use egg_mode::user::{followers_ids, friends_ids, relation_lookup, Connection, RelationLookup};
+use egg_mode::user::{
+    followers_ids, friends_ids, lookup, relation_lookup, Connection, RelationLookup, TwitterUser,
+};
 use egg_mode::Token;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -44,6 +46,10 @@ impl TwitterClient {
         let response = relation_lookup(user_ids.to_vec(), &self.token)
             .await?
             .response;
+        Ok(response)
+    }
+    pub async fn get_user_data(&self, user_ids: &[u64]) -> Result<Vec<TwitterUser>> {
+        let response = lookup(user_ids.to_vec(), &self.token).await?.response;
         Ok(response)
     }
 }

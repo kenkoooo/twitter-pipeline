@@ -12,15 +12,12 @@ pub struct UserIdSynchronizer {
 }
 
 impl UserIdSynchronizer {
-    pub fn run(&self) -> JoinHandle<()> {
-        let pool = self.pool.clone();
-        let client = self.client.clone();
-        let follower = self.follower;
+    pub fn run(self) -> JoinHandle<()> {
         actix::spawn(async move {
             let mut cursor = -1;
             loop {
                 log::info!("Fetching ids ...");
-                match fetch_and_put(&client, &pool, follower, cursor).await {
+                match fetch_and_put(&self.client, &self.pool, self.follower, cursor).await {
                     Ok(next_cursor) => {
                         cursor = next_cursor;
                         if cursor == 0 {

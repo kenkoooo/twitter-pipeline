@@ -1,24 +1,14 @@
-use actix_web::{get, web, App, HttpServer, Responder};
+use actix_web::{App, HttpServer};
 use anyhow::Result;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
-use serde::Deserialize;
 use sqlx::PgPool;
 use std::io::stdin;
+use twitter_pipeline::server::{get_remove_candidates, post_allow_user, post_confirm_remove};
 use twitter_pipeline::twitter::TwitterClient;
 use twitter_pipeline::worker::message_listener::MessageListener;
 use twitter_pipeline::worker::relation_sync::RelationSynchronizer;
 use twitter_pipeline::worker::user_id_sync::UserIdSynchronizer;
-
-#[derive(Deserialize)]
-struct Info {
-    id: u32,
-    name: String,
-}
-#[get("/{id}/{name}/index.html")]
-async fn index(path: web::Path<Info>) -> impl Responder {
-    format!("Hello {}! id:{}", path.name, path.id)
-}
 
 #[actix_web::main]
 async fn main() -> Result<()> {
@@ -65,10 +55,17 @@ async fn main() -> Result<()> {
     relation_syncer.run();
     message_listener.run();
 
-    HttpServer::new(move || App::new().service(index).data(pool.clone()))
-        .bind("0.0.0.0:8080")?
-        .run()
-        .await?;
+    HttpServer::new(move || {
+        App::new()
+            .service(get_remove_candidates)
+            .service(post_confirm_remove)
+            .service(post_allow_user)
+            .data(client.clone())
+            .data(pool.clone())
+    })
+    .bind("0.0.0.0:8080")?
+    .run()
+    .await?;
     Ok(())
 }
 
