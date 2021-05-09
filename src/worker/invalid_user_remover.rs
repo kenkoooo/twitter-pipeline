@@ -70,15 +70,14 @@ async fn extract_and_unfollow<P: PgPoolExt>(pool: &P, client: &TwitterClient) ->
         .map(|user| user.id)
         .collect::<Vec<_>>();
     let relations = client.get_relations(&invalid_user_ids, true).await?;
-    let user_ids = relations
+    let relations = relations
         .into_iter()
         .filter(|relation| relation.is_friend() && !relation.is_follower())
-        .map(|relation| relation.id)
         .collect::<Vec<_>>();
 
-    for user_id in user_ids {
-        log::info!("Unfollowing {}", user_id);
-        let response = unfollow(user_id, &client.token).await?;
+    for relation in relations {
+        log::info!("Unfollowing @{}", relation.screen_name);
+        let response = unfollow(relation.id, &client.token).await?;
         log::info!("Unfollowed @{}", response.response.screen_name);
 
         log::info!("Sleeping 1 minute");
