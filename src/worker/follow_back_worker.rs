@@ -1,6 +1,6 @@
 use crate::current_time_duration;
 use crate::sql::PgPoolExt;
-use crate::twitter::TwitterClient;
+use crate::twitter::{RelationLookupExt, TwitterClient};
 use actix::clock::sleep;
 use actix_web::rt::task::JoinHandle;
 use anyhow::Result;
@@ -56,29 +56,42 @@ async fn extract_and_follow<R: Rng, P: PgPoolExt>(
             user_data.push(user);
         } else {
             no_data_user_ids.push(user_id as u64);
-            if no_data_user_ids.len() == 100 {
-                break;
-            }
         }
     }
 
-    if !no_data_user_ids.is_empty() {
-        log::info!("Fetching {} users", no_data_user_ids.len());
-        let fetched_data = client.get_user_data(&no_data_user_ids).await?;
+    log::info!("Fetching {} user data", no_data_user_ids.len());
+    for user_ids in no_data_user_ids.chunks(100) {
+        let fetched_data = client.get_user_data(&user_ids).await?;
         for user_data in fetched_data.iter() {
             pool.put_user_info(user_data).await?;
         }
         user_data.extend(fetched_data);
+
+        log::info!("Sleeping 10 seconds ...");
+        sleep(Duration::from_secs(10)).await;
     }
 
-    // TODO relation check
-    log::info!("Following {} users", user_data.len());
-    for user in user_data {
-        log::info!("Following @{} ...", user.screen_name);
-        follow(user.id, false, &client.token).await?;
+    let mut should_follow = vec![];
+    for users in user_data.chunks(100) {
+        let ids = users.iter().map(|user| user.id).collect::<Vec<_>>();
+        let relations = client.get_relations(&ids).await?;
+        for relation in relations {
+            if relation.is_follower() && !relation.is_friend() && !relation.is_pending() {
+                should_follow.push(relation);
+            }
+        }
+        log::info!("Sleeping 3 minutes ...");
+        sleep(Duration::from_secs(180)).await;
+    }
 
-        log::info!("Sleeping 10 minutes ...");
-        sleep(Duration::from_secs(600)).await;
+    log::info!("Following {} users", should_follow.len());
+    for user in should_follow {
+        log::info!("Following @{} ...", user.screen_name);
+        let response = follow(user.id, false, &client.token).await?;
+        log::info!("Followed @{} ...", response.screen_name);
+
+        log::info!("Sleeping 1 minutes ...");
+        sleep(Duration::from_secs(60)).await;
     }
 
     Ok(())
