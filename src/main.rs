@@ -4,13 +4,16 @@ use sqlx::PgPool;
 use std::io::stdin;
 use twitter_pipeline::server::{get_remove_candidates, remove_user};
 use twitter_pipeline::twitter::TwitterClient;
-use twitter_pipeline::worker::follow_back_worker::FollowBackWorker;
-use twitter_pipeline::worker::user_id_sync::UserIdSynchronizer;
+use twitter_pipeline::worker::InvalidUserRemover;
+use twitter_pipeline::worker::UserIdSynchronizer;
+use twitter_pipeline::worker::{FollowBackWorker, UserDataSynchronizer};
 
 #[actix_web::main]
 async fn main() -> Result<()> {
     dotenv::dotenv()?;
     env_logger::init();
+    let sql_url = std::env::var("SQL_URL")?;
+    let pool = PgPool::connect(&sql_url).await?;
 
     let consumer_key = std::env::var("CONSUMER_KEY")?;
     let consumer_secret = std::env::var("CONSUMER_SECRET")?;
@@ -23,9 +26,6 @@ async fn main() -> Result<()> {
     let (token, _, screen_name) =
         egg_mode::auth::access_token(token, &request_token, input.trim()).await?;
     let client = TwitterClient { token, screen_name };
-
-    let sql_url = std::env::var("SQL_URL")?;
-    let pool = PgPool::connect(&sql_url).await?;
 
     let followers_ids_syncer = UserIdSynchronizer {
         pool: pool.clone(),
@@ -41,10 +41,20 @@ async fn main() -> Result<()> {
         pool: pool.clone(),
         client: client.clone(),
     };
+    let invalid_user_remover = InvalidUserRemover {
+        pool: pool.clone(),
+        client: client.clone(),
+    };
+    let user_data_syncer = UserDataSynchronizer {
+        pool: pool.clone(),
+        client: client.clone(),
+    };
 
     followers_ids_syncer.run();
     friends_ids_syncer.run();
     follow_back_worker.start();
+    invalid_user_remover.start();
+    user_data_syncer.start();
 
     HttpServer::new(move || {
         App::new()

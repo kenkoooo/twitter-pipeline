@@ -1,3 +1,4 @@
+use crate::current_time_duration;
 use crate::sql::PgPoolExt;
 use crate::twitter::{RelationLookupExt, TwitterClient};
 use actix_web::web::{Data, Json};
@@ -11,7 +12,6 @@ use sqlx::PgPool;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::iter::FromIterator;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
 pub struct ActixError(Error);
@@ -32,11 +32,7 @@ pub async fn get_remove_candidates(
     pool: Data<PgPool>,
     client: Data<TwitterClient>,
 ) -> Result<HttpResponse, ActixError> {
-    let one_hour_ago = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        - 3600;
+    let one_hour_ago = current_time_duration().as_secs() - 3600;
     let mut rng = StdRng::seed_from_u64(one_hour_ago);
 
     let friends_ids = pool.get_user_ids(one_hour_ago as i64, true).await?;

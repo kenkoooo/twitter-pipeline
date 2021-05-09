@@ -1,10 +1,10 @@
+use crate::current_time_duration;
 use anyhow::Result;
 use async_trait::async_trait;
 use egg_mode::user::TwitterUser;
 use sqlx::postgres::PgRow;
 use sqlx::types::Json;
 use sqlx::{PgPool, Row};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const FRIENDS_IDS: &str = "friends_ids";
 const FOLLOWERS_IDS: &str = "followers_ids";
@@ -21,6 +21,8 @@ pub trait PgPoolExt {
 
     async fn get_user_info(&self, id: i64) -> Result<Option<TwitterUser>>;
     async fn put_user_info(&self, user: &TwitterUser) -> Result<()>;
+
+    async fn get_no_data_user_ids(&self) -> Result<Vec<i64>>;
 }
 
 #[async_trait]
@@ -42,7 +44,7 @@ impl PgPoolExt for PgPool {
         ",
             table_name = table_name
         );
-        let unixtime_second = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let unixtime_second = current_time_duration().as_secs();
 
         const CHUNK_SIZE: usize = 1000;
         let ids = match request {
@@ -88,8 +90,14 @@ impl PgPoolExt for PgPool {
         .bind(id)
         .try_map(|row: PgRow| row.try_get::<Json<TwitterUser>, _>("data"))
         .fetch_optional(self)
-        .await?;
-        Ok(result.map(|x| x.0))
+        .await;
+        match result {
+            Ok(result) => Ok(result.map(|x| x.0)),
+            Err(e) => {
+                log::error!("Failed to parse user_data of id={}: {:?}", id, e);
+                Ok(None)
+            }
+        }
     }
 
     async fn put_user_info(&self, user: &TwitterUser) -> Result<()> {
@@ -97,6 +105,8 @@ impl PgPoolExt for PgPool {
         sqlx::query(
             r"
             INSERT INTO user_data (id, data) VALUES ($1, $2)
+            ON CONFLICT (id)
+            DO UPDATE SET data = EXCLUDED.data
         ",
         )
         .bind(id)
@@ -104,5 +114,33 @@ impl PgPoolExt for PgPool {
         .execute(self)
         .await?;
         Ok(())
+    }
+
+    async fn get_no_data_user_ids(&self) -> Result<Vec<i64>> {
+        let mut no_data_friends_ids = sqlx::query(
+            r"
+            SELECT friends_ids.id FROM friends_ids
+            LEFT JOIN user_data ON user_data.id = friends_ids.id
+            WHERE user_data.data IS NULL
+            LIMIT 100
+        ",
+        )
+        .try_map(|row: PgRow| row.try_get::<i64, _>(0))
+        .fetch_all(self)
+        .await?;
+        let no_data_followers_ids = sqlx::query(
+            r"
+            SELECT followers_ids.id FROM followers_ids
+            LEFT JOIN user_data ON user_data.id = followers_ids.id
+            WHERE user_data.data IS NULL
+            LIMIT 100
+        ",
+        )
+        .try_map(|row: PgRow| row.try_get::<i64, _>(0))
+        .fetch_all(self)
+        .await?;
+        no_data_friends_ids.extend(no_data_followers_ids);
+        no_data_friends_ids.truncate(100);
+        Ok(no_data_friends_ids)
     }
 }
