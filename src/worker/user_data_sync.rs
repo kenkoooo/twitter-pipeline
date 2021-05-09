@@ -37,11 +37,11 @@ async fn fetch_user_data<P: PgPoolExt, R: Rng>(
 ) -> Result<()> {
     let mut user_ids = pool.get_no_data_user_ids(1000).await?;
     user_ids.shuffle(rng);
+
     if user_ids.len() > 100 {
         user_ids.truncate(100);
     } else {
-        let half = (user_ids.len() + 1) / 2;
-        user_ids.truncate(half);
+        user_ids.truncate(1);
     }
     if !user_ids.is_empty() {
         let user_data = client
