@@ -71,6 +71,7 @@ async fn extract_and_follow<R: Rng, P: PgPoolExt>(
         user_data.extend(fetched_data);
     }
 
+    // TODO relation check
     log::info!("Following {} users", user_data.len());
     for user in user_data {
         log::info!("Following @{} ...", user.screen_name);
