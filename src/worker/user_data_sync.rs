@@ -44,9 +44,8 @@ async fn fetch_user_data<P: PgPoolExt, R: Rng>(
         user_ids.truncate(1);
     }
     if !user_ids.is_empty() {
-        let user_data = client
-            .get_user_data(&user_ids.into_iter().map(|i| i as u64).collect::<Vec<_>>())
-            .await?;
+        let user_ids = user_ids.into_iter().map(|i| i as u64).collect::<Vec<_>>();
+        let user_data = client.get_user_data(&user_ids, true).await?;
         for user_data in user_data {
             pool.put_user_info(&user_data).await?;
         }

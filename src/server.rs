@@ -60,7 +60,7 @@ pub async fn get_remove_candidates(
 
     if !no_data_user.is_empty() {
         log::info!("Fetching {} users", no_data_user.len());
-        let fetched_data = client.get_user_data(&no_data_user).await?;
+        let fetched_data = client.get_user_data(&no_data_user, false).await?;
         for user_data in fetched_data.iter() {
             pool.put_user_info(user_data).await?;
         }
@@ -70,7 +70,7 @@ pub async fn get_remove_candidates(
     user_data.shuffle(&mut rng);
     user_data.truncate(100);
     let user_ids = user_data.iter().map(|user| user.id).collect::<Vec<_>>();
-    let relations = client.get_relations(&user_ids).await?;
+    let relations = client.get_relations(&user_ids, false).await?;
     let mut relation_map = BTreeMap::new();
     for relation in relations {
         relation_map.insert(relation.id, relation);

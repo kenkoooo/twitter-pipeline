@@ -56,7 +56,7 @@ async fn extract_and_unfollow<P: PgPoolExt>(pool: &P, client: &TwitterClient) ->
     }
 
     if !no_data_user_ids.is_empty() {
-        let data = client.get_user_data(&no_data_user_ids).await?;
+        let data = client.get_user_data(&no_data_user_ids, true).await?;
         for data in data.iter() {
             pool.put_user_info(data).await?;
         }
@@ -69,7 +69,7 @@ async fn extract_and_unfollow<P: PgPoolExt>(pool: &P, client: &TwitterClient) ->
         .take(100)
         .map(|user| user.id)
         .collect::<Vec<_>>();
-    let relations = client.get_relations(&invalid_user_ids).await?;
+    let relations = client.get_relations(&invalid_user_ids, true).await?;
     let user_ids = relations
         .into_iter()
         .filter(|relation| relation.is_friend() && !relation.is_follower())
@@ -81,9 +81,8 @@ async fn extract_and_unfollow<P: PgPoolExt>(pool: &P, client: &TwitterClient) ->
         let response = unfollow(user_id, &client.token).await?;
         log::info!("Unfollowed @{}", response.response.screen_name);
 
-        let sleep_duration = Duration::from_secs(300);
-        log::info!("Sleeping {} seconds", sleep_duration.as_secs());
-        sleep(sleep_duration).await;
+        log::info!("Sleeping 1 minute");
+        sleep(Duration::from_secs(60)).await;
     }
     Ok(())
 }

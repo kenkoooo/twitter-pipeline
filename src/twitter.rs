@@ -1,9 +1,11 @@
+use actix::clock::sleep;
 use anyhow::Result;
 use egg_mode::error::Error::RateLimit;
 use egg_mode::user::{
     followers_ids, friends_ids, lookup, relation_lookup, Connection, RelationLookup, TwitterUser,
 };
 use egg_mode::Token;
+use std::future::Future;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
@@ -32,25 +34,56 @@ impl TwitterClient {
                 c
             }
         };
-        match GracefulResponse::from(c.call().await) {
-            GracefulResponse::Response(response) => {
+        match TwitterApiResponse::from(c.call().await) {
+            TwitterApiResponse::Data(response) => {
                 let ids = response.response.ids;
                 let next_cursor = response.response.next_cursor;
                 Ok(FetchIdResponse::Ids { ids, next_cursor })
             }
-            GracefulResponse::RateLimitError(time) => Ok(FetchIdResponse::RateLimitExceeded(time)),
-            GracefulResponse::Error(e) => Err(e.into()),
+            TwitterApiResponse::RateLimitError(time) => {
+                Ok(FetchIdResponse::RateLimitExceeded(time))
+            }
+            TwitterApiResponse::Error(e) => Err(e.into()),
         }
     }
-    pub async fn get_relations(&self, user_ids: &[u64]) -> Result<Vec<RelationLookup>> {
-        let response = relation_lookup(user_ids.to_vec(), &self.token)
-            .await?
-            .response;
-        Ok(response)
+    pub async fn get_relations(&self, user_ids: &[u64], wait: bool) -> Result<Vec<RelationLookup>> {
+        wait_and_call(|| relation_lookup(user_ids.to_vec(), &self.token), wait).await
     }
-    pub async fn get_user_data(&self, user_ids: &[u64]) -> Result<Vec<TwitterUser>> {
-        let response = lookup(user_ids.to_vec(), &self.token).await?.response;
-        Ok(response)
+
+    pub async fn get_user_data(&self, user_ids: &[u64], wait: bool) -> Result<Vec<TwitterUser>> {
+        wait_and_call(|| lookup(user_ids.to_vec(), &self.token), wait).await
+    }
+}
+
+async fn wait_and_call<F, T, Fut>(f: F, wait: bool) -> Result<T>
+where
+    F: Fn() -> Fut,
+    Fut: Future<Output = egg_mode::error::Result<egg_mode::Response<T>>>,
+{
+    loop {
+        match TwitterApiResponse::from(f().await) {
+            TwitterApiResponse::Data(response) => {
+                return Ok(response.response);
+            }
+            TwitterApiResponse::RateLimitError(time) => {
+                if wait {
+                    let now = SystemTime::now();
+                    if let Ok(duration) = time.duration_since(now) {
+                        log::info!(
+                            "Rate Limit Exceeded: Sleeping {} seconds",
+                            duration.as_secs()
+                        );
+                        sleep(duration).await;
+                    }
+                } else {
+                    log::error!("Rate Limit Exceeded");
+                    return Err(anyhow::anyhow!("Rate Limit Exceeded: relation_lookup"));
+                }
+            }
+            TwitterApiResponse::Error(e) => {
+                return Err(e.into());
+            }
+        }
     }
 }
 
@@ -65,21 +98,31 @@ pub enum FetchIdResponse {
     Ids { ids: Vec<u64>, next_cursor: i64 },
 }
 
-enum GracefulResponse<T> {
-    Response(T),
+pub enum TwitterApiResponse<T> {
+    Data(T),
     RateLimitError(SystemTime),
     Error(egg_mode::error::Error),
 }
 
-impl<T> From<egg_mode::error::Result<T>> for GracefulResponse<T> {
+impl<T> TwitterApiResponse<T> {
+    pub fn map<U, F: Fn(T) -> U>(self, mapper: F) -> TwitterApiResponse<U> {
+        match self {
+            TwitterApiResponse::Data(t) => TwitterApiResponse::Data(mapper(t)),
+            TwitterApiResponse::RateLimitError(time) => TwitterApiResponse::RateLimitError(time),
+            TwitterApiResponse::Error(e) => TwitterApiResponse::Error(e),
+        }
+    }
+}
+
+impl<T> From<egg_mode::error::Result<T>> for TwitterApiResponse<T> {
     fn from(response: egg_mode::error::Result<T>) -> Self {
         match response {
-            Ok(response) => GracefulResponse::Response(response),
+            Ok(response) => TwitterApiResponse::Data(response),
             Err(RateLimit(reset)) => {
                 let system_time = UNIX_EPOCH + Duration::from_secs(reset as u64);
-                GracefulResponse::RateLimitError(system_time)
+                TwitterApiResponse::RateLimitError(system_time)
             }
-            Err(e) => GracefulResponse::Error(e),
+            Err(e) => TwitterApiResponse::Error(e),
         }
     }
 }
