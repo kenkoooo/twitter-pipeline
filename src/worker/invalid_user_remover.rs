@@ -75,6 +75,7 @@ async fn extract_and_unfollow<P: PgPoolExt>(pool: &P, client: &TwitterClient) ->
         .filter(|relation| relation.is_friend() && !relation.is_follower())
         .collect::<Vec<_>>();
 
+    log::info!("Removing {} users", relations.len());
     for relation in relations {
         log::info!("Unfollowing @{}", relation.screen_name);
         let response = unfollow(relation.id, &client.token).await?;
@@ -87,15 +88,16 @@ async fn extract_and_unfollow<P: PgPoolExt>(pool: &P, client: &TwitterClient) ->
 }
 
 fn is_invalid_user(user: &TwitterUser) -> bool {
-    if user.friends_count > 0 {
-        return false;
-    }
-    user.status
+    let no_friend = user.friends_count == 0;
+    let no_tweet = user
+        .status
         .as_ref()
         .map(|status| {
             let now = current_time_duration().as_secs() as i64;
             let timestamp = status.created_at.timestamp();
-            (now - timestamp) > 3600 * 24 * 365
+            (now - timestamp) > 3600 * 24 * 365 * 2
         })
-        .unwrap_or(false)
+        .unwrap_or(true);
+
+    no_tweet && no_friend
 }
