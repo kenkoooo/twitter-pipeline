@@ -47,15 +47,21 @@ impl TwitterClient {
         }
     }
     pub async fn get_relations(&self, user_ids: &[u64], wait: bool) -> Result<Vec<RelationLookup>> {
-        wait_and_call(|| relation_lookup(user_ids.to_vec(), &self.token), wait).await
+        wait_and_call(
+            || relation_lookup(user_ids.to_vec(), &self.token),
+            wait,
+            "relation_lookup",
+        )
+        .await
     }
 
     pub async fn get_user_data(&self, user_ids: &[u64], wait: bool) -> Result<Vec<TwitterUser>> {
-        wait_and_call(|| lookup(user_ids.to_vec(), &self.token), wait).await
+        log::info!("Fetching data of {} users", user_ids.len());
+        wait_and_call(|| lookup(user_ids.to_vec(), &self.token), wait, "lookup").await
     }
 }
 
-async fn wait_and_call<F, T, Fut>(f: F, wait: bool) -> Result<T>
+async fn wait_and_call<F, T, Fut>(f: F, wait: bool, api_name: &str) -> Result<T>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = egg_mode::error::Result<egg_mode::Response<T>>>,
@@ -77,7 +83,7 @@ where
                     }
                 } else {
                     log::error!("Rate Limit Exceeded");
-                    return Err(anyhow::anyhow!("Rate Limit Exceeded: relation_lookup"));
+                    return Err(anyhow::anyhow!("Rate Limit Exceeded: {}", api_name));
                 }
             }
             TwitterApiResponse::Error(e) => {

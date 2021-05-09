@@ -1,3 +1,4 @@
+use crate::current_time_duration;
 use crate::sql::PgPoolExt;
 use crate::twitter::TwitterClient;
 use actix::clock::sleep;
@@ -35,7 +36,8 @@ async fn fetch_user_data<P: PgPoolExt, R: Rng>(
     client: &TwitterClient,
     rng: &mut R,
 ) -> Result<()> {
-    let mut user_ids = pool.get_no_data_user_ids(1000).await?;
+    let one_hour_ago = current_time_duration().as_secs() - 3600;
+    let mut user_ids = pool.get_no_data_user_ids(one_hour_ago as i64, 1000).await?;
     user_ids.shuffle(rng);
 
     if user_ids.len() > 100 {
