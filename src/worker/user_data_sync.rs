@@ -3,18 +3,21 @@ use crate::twitter::TwitterClient;
 use actix::clock::sleep;
 use actix_web::rt::task::JoinHandle;
 use anyhow::Result;
+use rand::prelude::*;
 use std::time::Duration;
 
-pub struct UserDataSynchronizer<P> {
+pub struct UserDataSynchronizer<P, R> {
     pub pool: P,
     pub client: TwitterClient,
+    pub rng: R,
 }
 
-impl<P: PgPoolExt + 'static> UserDataSynchronizer<P> {
+impl<P: PgPoolExt + 'static, R: Rng + 'static> UserDataSynchronizer<P, R> {
     pub fn start(self) -> JoinHandle<()> {
         actix::spawn(async move {
+            let mut rng = self.rng;
             loop {
-                if let Err(e) = fetch_user_data(&self.pool, &self.client).await {
+                if let Err(e) = fetch_user_data(&self.pool, &self.client, &mut rng).await {
                     log::error!("{:?}", e);
                     log::info!("Sleeping 5 minutes");
                     sleep(Duration::from_secs(300)).await;
@@ -27,13 +30,26 @@ impl<P: PgPoolExt + 'static> UserDataSynchronizer<P> {
     }
 }
 
-async fn fetch_user_data<P: PgPoolExt>(pool: &P, client: &TwitterClient) -> Result<()> {
-    let user_ids = pool.get_no_data_user_ids().await?;
-    let user_data = client
-        .get_user_data(&user_ids.into_iter().map(|i| i as u64).collect::<Vec<_>>())
-        .await?;
-    for user_data in user_data {
-        pool.put_user_info(&user_data).await?;
+async fn fetch_user_data<P: PgPoolExt, R: Rng>(
+    pool: &P,
+    client: &TwitterClient,
+    rng: &mut R,
+) -> Result<()> {
+    let mut user_ids = pool.get_no_data_user_ids(1000).await?;
+    user_ids.shuffle(rng);
+    if user_ids.len() > 100 {
+        user_ids.truncate(100);
+    } else {
+        let half = (user_ids.len() + 1) / 2;
+        user_ids.truncate(half);
+    }
+    if !user_ids.is_empty() {
+        let user_data = client
+            .get_user_data(&user_ids.into_iter().map(|i| i as u64).collect::<Vec<_>>())
+            .await?;
+        for user_data in user_data {
+            pool.put_user_info(&user_data).await?;
+        }
     }
     Ok(())
 }

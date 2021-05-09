@@ -1,5 +1,6 @@
 use actix_web::{App, HttpServer};
 use anyhow::Result;
+use rand::thread_rng;
 use sqlx::PgPool;
 use std::io::stdin;
 use twitter_pipeline::server::{get_remove_candidates, remove_user};
@@ -48,6 +49,7 @@ async fn main() -> Result<()> {
     let user_data_syncer = UserDataSynchronizer {
         pool: pool.clone(),
         client: client.clone(),
+        rng: thread_rng(),
     };
 
     followers_ids_syncer.run();

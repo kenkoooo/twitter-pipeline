@@ -3,6 +3,7 @@ services:
   postgresql:
     container_name: twitter-pipeline-postgresql
     image: postgres:12.3
+    shm_size: 1g
     ports:
       - "5432:5432"
     environment:

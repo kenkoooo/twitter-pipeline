@@ -22,7 +22,7 @@ pub trait PgPoolExt {
     async fn get_user_info(&self, id: i64) -> Result<Option<TwitterUser>>;
     async fn put_user_info(&self, user: &TwitterUser) -> Result<()>;
 
-    async fn get_no_data_user_ids(&self) -> Result<Vec<i64>>;
+    async fn get_no_data_user_ids(&self, size: i64) -> Result<Vec<i64>>;
 }
 
 #[async_trait]
@@ -116,15 +116,16 @@ impl PgPoolExt for PgPool {
         Ok(())
     }
 
-    async fn get_no_data_user_ids(&self) -> Result<Vec<i64>> {
+    async fn get_no_data_user_ids(&self, size: i64) -> Result<Vec<i64>> {
         let mut no_data_friends_ids = sqlx::query(
             r"
             SELECT friends_ids.id FROM friends_ids
             LEFT JOIN user_data ON user_data.id = friends_ids.id
             WHERE user_data.data IS NULL
-            LIMIT 100
+            LIMIT $1
         ",
         )
+        .bind(size)
         .try_map(|row: PgRow| row.try_get::<i64, _>(0))
         .fetch_all(self)
         .await?;
@@ -133,14 +134,14 @@ impl PgPoolExt for PgPool {
             SELECT followers_ids.id FROM followers_ids
             LEFT JOIN user_data ON user_data.id = followers_ids.id
             WHERE user_data.data IS NULL
-            LIMIT 100
+            LIMIT $1
         ",
         )
+        .bind(size)
         .try_map(|row: PgRow| row.try_get::<i64, _>(0))
         .fetch_all(self)
         .await?;
         no_data_friends_ids.extend(no_data_followers_ids);
-        no_data_friends_ids.truncate(100);
         Ok(no_data_friends_ids)
     }
 }
