@@ -9,14 +9,9 @@ use sqlx::{PgPool, Row};
 const FRIENDS_IDS: &str = "friends_ids";
 const FOLLOWERS_IDS: &str = "followers_ids";
 
-pub enum PutIdsRequest {
-    Friends(Vec<u64>),
-    Followers(Vec<u64>),
-}
-
 #[async_trait]
 pub trait PgPoolExt {
-    async fn put_user_ids(&self, request: &PutIdsRequest) -> Result<()>;
+    async fn put_user_ids(&self, ids: &[u64], follower: bool) -> Result<()>;
     async fn get_user_ids(&self, confirmed_after: i64, is_friends: bool) -> Result<Vec<i64>>;
 
     async fn get_user_info(&self, id: i64) -> Result<Option<TwitterUser>>;
@@ -27,11 +22,8 @@ pub trait PgPoolExt {
 
 #[async_trait]
 impl PgPoolExt for PgPool {
-    async fn put_user_ids(&self, request: &PutIdsRequest) -> Result<()> {
-        let table_name = match request {
-            PutIdsRequest::Friends(_) => FRIENDS_IDS,
-            PutIdsRequest::Followers(_) => FOLLOWERS_IDS,
-        };
+    async fn put_user_ids(&self, ids: &[u64], follower: bool) -> Result<()> {
+        let table_name = if follower { FOLLOWERS_IDS } else { FRIENDS_IDS };
         let query = format!(
             r"
             INSERT INTO {table_name} (id, confirmed_at)
@@ -47,10 +39,7 @@ impl PgPoolExt for PgPool {
         let unixtime_second = current_time_duration().as_secs();
 
         const CHUNK_SIZE: usize = 1000;
-        let ids = match request {
-            PutIdsRequest::Friends(ids) => ids.iter().map(|&id| id as i64).collect::<Vec<_>>(),
-            PutIdsRequest::Followers(ids) => ids.iter().map(|&id| id as i64).collect::<Vec<_>>(),
-        };
+        let ids = ids.iter().map(|&id| id as i64).collect::<Vec<_>>();
         for ids in ids.chunks(CHUNK_SIZE) {
             sqlx::query(&query)
                 .bind(ids)

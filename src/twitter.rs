@@ -15,53 +15,51 @@ pub struct TwitterClient {
 }
 
 impl TwitterClient {
-    pub async fn fetch_ids(&self, request: FetchIdRequest) -> Result<FetchIdResponse> {
-        let c = match request {
-            FetchIdRequest::Friends {
-                screen_name,
-                cursor,
-            } => {
-                let mut c = friends_ids(screen_name, &self.token).with_page_size(5000);
-                c.next_cursor = cursor;
-                c
-            }
-            FetchIdRequest::Followers {
-                screen_name,
-                cursor,
-            } => {
-                let mut c = followers_ids(screen_name, &self.token).with_page_size(5000);
-                c.next_cursor = cursor;
-                c
-            }
+    pub(crate) async fn fetch_ids(
+        &self,
+        screen_name: String,
+        cursor: i64,
+        follower: bool,
+    ) -> Result<(Vec<u64>, i64)> {
+        let c = if follower {
+            followers_ids(screen_name, &self.token)
+        } else {
+            friends_ids(screen_name, &self.token)
         };
-        match TwitterApiResponse::from(c.call().await) {
-            TwitterApiResponse::Data(response) => {
-                let ids = response.response.ids;
-                let next_cursor = response.response.next_cursor;
-                Ok(FetchIdResponse::Ids { ids, next_cursor })
-            }
-            TwitterApiResponse::RateLimitError(time) => {
-                Ok(FetchIdResponse::RateLimitExceeded(time))
-            }
-            TwitterApiResponse::Error(e) => Err(e.into()),
-        }
+        let mut c = c.with_page_size(5000);
+        c.next_cursor = cursor;
+        let response = wait_and_call(|| c.call(), true, "fetch_ids")
+            .await?
+            .response;
+        Ok((response.ids, response.next_cursor))
     }
-    pub async fn get_relations(&self, user_ids: &[u64], wait: bool) -> Result<Vec<RelationLookup>> {
+    pub(crate) async fn get_relations(
+        &self,
+        user_ids: &[u64],
+        wait: bool,
+    ) -> Result<Vec<RelationLookup>> {
         wait_and_call(
             || relation_lookup(user_ids.to_vec(), &self.token),
             wait,
             "relation_lookup",
         )
         .await
+        .map(|response| response.response)
     }
 
-    pub async fn get_user_data(&self, user_ids: &[u64], wait: bool) -> Result<Vec<TwitterUser>> {
+    pub(crate) async fn get_user_data(
+        &self,
+        user_ids: &[u64],
+        wait: bool,
+    ) -> Result<Vec<TwitterUser>> {
         log::info!("Fetching data of {} users", user_ids.len());
-        wait_and_call(|| lookup(user_ids.to_vec(), &self.token), wait, "lookup").await
+        wait_and_call(|| lookup(user_ids.to_vec(), &self.token), wait, "lookup")
+            .await
+            .map(|response| response.response)
     }
 }
 
-async fn wait_and_call<F, T, Fut>(f: F, wait: bool, api_name: &str) -> Result<T>
+async fn wait_and_call<F, T, Fut>(f: F, wait: bool, api_name: &str) -> Result<egg_mode::Response<T>>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = egg_mode::error::Result<egg_mode::Response<T>>>,
@@ -69,7 +67,7 @@ where
     loop {
         match TwitterApiResponse::from(f().await) {
             TwitterApiResponse::Data(response) => {
-                return Ok(response.response);
+                return Ok(response);
             }
             TwitterApiResponse::RateLimitError(time) => {
                 if wait {
@@ -93,31 +91,10 @@ where
     }
 }
 
-#[derive(Debug)]
-pub enum FetchIdRequest {
-    Friends { screen_name: String, cursor: i64 },
-    Followers { screen_name: String, cursor: i64 },
-}
-
-pub enum FetchIdResponse {
-    RateLimitExceeded(SystemTime),
-    Ids { ids: Vec<u64>, next_cursor: i64 },
-}
-
-pub enum TwitterApiResponse<T> {
+enum TwitterApiResponse<T> {
     Data(T),
     RateLimitError(SystemTime),
     Error(egg_mode::error::Error),
-}
-
-impl<T> TwitterApiResponse<T> {
-    pub fn map<U, F: Fn(T) -> U>(self, mapper: F) -> TwitterApiResponse<U> {
-        match self {
-            TwitterApiResponse::Data(t) => TwitterApiResponse::Data(mapper(t)),
-            TwitterApiResponse::RateLimitError(time) => TwitterApiResponse::RateLimitError(time),
-            TwitterApiResponse::Error(e) => TwitterApiResponse::Error(e),
-        }
-    }
 }
 
 impl<T> From<egg_mode::error::Result<T>> for TwitterApiResponse<T> {
@@ -133,7 +110,7 @@ impl<T> From<egg_mode::error::Result<T>> for TwitterApiResponse<T> {
     }
 }
 
-pub trait RelationLookupExt {
+pub(crate) trait RelationLookupExt {
     fn is_friend(&self) -> bool;
     fn is_follower(&self) -> bool;
     fn is_pending(&self) -> bool;
