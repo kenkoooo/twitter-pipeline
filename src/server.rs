@@ -1,6 +1,6 @@
-use crate::current_time_duration;
 use crate::sql::PgPoolExt;
 use crate::twitter::{RelationLookupExt, TwitterClient};
+use crate::{current_time_duration, get_difference};
 use actix_web::web::{Data, Json};
 use actix_web::{get, post, HttpResponse, ResponseError};
 use anyhow::Error;
@@ -9,9 +9,8 @@ use rand::prelude::*;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
-use std::iter::FromIterator;
 
 #[derive(Debug)]
 pub struct ActixError(Error);
@@ -34,37 +33,15 @@ pub async fn get_remove_candidates(
 ) -> Result<HttpResponse, ActixError> {
     let one_hour_ago = current_time_duration().as_secs() - 3600;
     let mut rng = StdRng::seed_from_u64(one_hour_ago);
-
-    let friends_ids = pool.get_user_ids(one_hour_ago as i64, true).await?;
-    let followers_ids = pool.get_user_ids(one_hour_ago as i64, false).await?;
-
-    let followers_id_set = BTreeSet::from_iter(followers_ids.into_iter());
-    let mut remove_candidate_ids = friends_ids
-        .into_iter()
-        .filter(|user_id| !followers_id_set.contains(user_id))
-        .collect::<Vec<_>>();
+    let mut remove_candidate_ids =
+        get_difference(pool.as_ref(), one_hour_ago as i64, false).await?;
     remove_candidate_ids.shuffle(&mut rng);
 
-    let mut no_data_user = vec![];
     let mut user_data = vec![];
     for user_id in remove_candidate_ids {
         if let Some(user) = pool.get_user_info(user_id).await? {
             user_data.push(user);
-        } else {
-            no_data_user.push(user_id as u64);
-            if no_data_user.len() == 100 {
-                break;
-            }
         }
-    }
-
-    if !no_data_user.is_empty() {
-        log::info!("Fetching {} users", no_data_user.len());
-        let fetched_data = client.get_user_data(&no_data_user, false).await?;
-        for user_data in fetched_data.iter() {
-            pool.put_user_info(user_data).await?;
-        }
-        user_data.extend(fetched_data);
     }
 
     user_data.shuffle(&mut rng);
@@ -80,7 +57,7 @@ pub async fn get_remove_candidates(
         .into_iter()
         .filter(|user| {
             if let Some(relation) = relation_map.get(&user.id) {
-                relation.is_friend() && !relation.is_pending() && !relation.is_follower()
+                relation.is_friend() && !relation.is_follower()
             } else {
                 false
             }

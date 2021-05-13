@@ -12,7 +12,7 @@ const FOLLOWERS_IDS: &str = "followers_ids";
 #[async_trait]
 pub trait PgPoolExt {
     async fn put_user_ids(&self, ids: &[u64], follower: bool) -> Result<()>;
-    async fn get_user_ids(&self, confirmed_after: i64, is_friends: bool) -> Result<Vec<i64>>;
+    async fn get_user_ids(&self, follower: bool, confirmed_after: i64) -> Result<Vec<i64>>;
 
     async fn get_user_info(&self, id: i64) -> Result<Option<TwitterUser>>;
     async fn put_user_info(&self, user: &TwitterUser) -> Result<()>;
@@ -49,12 +49,8 @@ impl PgPoolExt for PgPool {
         }
         Ok(())
     }
-    async fn get_user_ids(&self, confirmed_after: i64, is_friends: bool) -> Result<Vec<i64>> {
-        let table_name = if is_friends {
-            FRIENDS_IDS
-        } else {
-            FOLLOWERS_IDS
-        };
+    async fn get_user_ids(&self, follower: bool, confirmed_after: i64) -> Result<Vec<i64>> {
+        let table_name = if follower { FOLLOWERS_IDS } else { FRIENDS_IDS };
         let query = format!(
             r"
             SELECT id FROM {table_name}
