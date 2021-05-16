@@ -596,7 +596,7 @@ checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 [[package]]
 name = "egg-mode"
 version = "0.15.0"
-source = "git+https://github.com/egg-mode-rs/egg-mode?rev=6b81073eba9c3b123ca0e80bdb5ef61d1758f131#6b81073eba9c3b123ca0e80bdb5ef61d1758f131"
+source = "git+https://github.com/kenkoooo/egg-mode?branch=bugfix/fix_coordinates_serializer#53fd4d20a079644c8aa71abff074741fa17289b2"
 dependencies = [
  "base64",
  "chrono",

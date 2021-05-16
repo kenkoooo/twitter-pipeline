@@ -11,7 +11,7 @@ actix-web = "4.0.0-beta.6"
 anyhow = "1.0.40"
 async-trait = "0.1.50"
 dotenv = "0.15.0"
-egg-mode = { git="https://github.com/egg-mode-rs/egg-mode", rev="6b81073eba9c3b123ca0e80bdb5ef61d1758f131" }
+egg-mode = { git="https://github.com/kenkoooo/egg-mode", branch="bugfix/fix_coordinates_serializer" }
 env_logger = "0.8.3"
 log = "0.4.14"
 rand = "0.8.3"
