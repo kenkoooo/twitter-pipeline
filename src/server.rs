@@ -1,7 +1,7 @@
 use crate::sql::PgPoolExt;
 use crate::twitter::{RelationLookupExt, TwitterClient};
 use crate::{current_time_duration, get_difference};
-use actix_web::web::{Data, Json};
+use actix_web::web::{Data, Json, Path};
 use actix_web::{get, post, HttpResponse, ResponseError};
 use anyhow::Error;
 use egg_mode::user::unfollow;
@@ -64,6 +64,16 @@ pub async fn get_remove_candidates(
         })
         .collect::<Vec<_>>();
 
+    Ok(HttpResponse::Ok().json(user_data))
+}
+
+#[get("/user_info/{user_id}")]
+pub async fn get_user_info(
+    path: Path<u64>,
+    client: Data<TwitterClient>,
+) -> Result<HttpResponse, ActixError> {
+    let user_id = path.into_inner();
+    let user_data = client.get_user_data(&vec![user_id], false).await?;
     Ok(HttpResponse::Ok().json(user_data))
 }
 

@@ -22,8 +22,8 @@ impl FollowBackWorker {
                 if let Err(e) = extract_and_follow(&self.pool, &self.client, &mut rng).await {
                     log::error!("{:?}", e);
 
-                    log::info!("Sleeping 10 minutes ...");
-                    sleep(Duration::from_secs(600)).await;
+                    log::info!("Sleeping 1 hour ...");
+                    sleep(Duration::from_secs(3600)).await;
                 }
             }
         })

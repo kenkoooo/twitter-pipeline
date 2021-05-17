@@ -3,7 +3,7 @@ use anyhow::Result;
 use rand::thread_rng;
 use sqlx::PgPool;
 use std::io::stdin;
-use twitter_pipeline::server::{get_remove_candidates, remove_user};
+use twitter_pipeline::server::{get_remove_candidates, get_user_info, remove_user};
 use twitter_pipeline::twitter::TwitterClient;
 use twitter_pipeline::worker::InvalidUserRemover;
 use twitter_pipeline::worker::UserIdSynchronizer;
@@ -62,6 +62,7 @@ async fn main() -> Result<()> {
         App::new()
             .service(get_remove_candidates)
             .service(remove_user)
+            .service(get_user_info)
             .data(client.clone())
             .data(pool.clone())
     })
