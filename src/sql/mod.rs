@@ -26,9 +26,10 @@ impl PgPoolExt for PgPool {
         let table_name = if follower { FOLLOWERS_IDS } else { FRIENDS_IDS };
         let query = format!(
             r"
-            INSERT INTO {table_name} (id, confirmed_at)
+            INSERT INTO {table_name} (id, confirmed_at, created_at)
             VALUES (
                 UNNEST($1::BIGINT[]),
+                $2,
                 $2
             )
             ON CONFLICT (id)
