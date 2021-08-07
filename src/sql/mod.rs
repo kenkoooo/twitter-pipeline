@@ -6,6 +6,9 @@ use sqlx::postgres::PgRow;
 use sqlx::types::Json;
 use sqlx::{PgPool, Row};
 
+mod user_ids;
+pub use user_ids::{UserIdClient, UserIdEntry};
+
 const FRIENDS_IDS: &str = "friends_ids";
 const FOLLOWERS_IDS: &str = "followers_ids";
 
